@@ -1,9 +1,4 @@
----
-title: "Practical Machine Learning - Prediction Assignment"
-author: "Tymon"
-date: "22 Feb 2015"
-output: html_document
----
+## Practical Machine Learning - Prediction Assignment
 
 ### Intro
 This is a short article which briefly explores models which could be used for outcome prediction of the HAR (Human Activity Recognition) data set (http://groupware.les.inf.puc-rio.br/har). The goal is to predict the class of the activity based on the input data collected from the accelerometers attached to the human subjects.
@@ -15,9 +10,9 @@ Two data sets have been provided for the analysis:
 1. Training data: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
 2. Testing data: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
 
-After the first load and initial examination it was pretty clear that the training data set contain many unspecified values, e.g. NA, empty strings or #DIV/0! which may negatively influnce build of the final model. In order to clean up the data sets, first step was to convert values NA, #DIV/0! and empty strings into explicit NA values.
+After the first load and initial examination it was pretty clear that the training data set contain many unspecified values, e.g. NA, empty strings or #DIV/0! which may negatively influence build of the final model. In order to clean up the data sets, first step was to convert values NA, #DIV/0! and empty strings into explicit NA values.
 
-Then, in order to reduce number of the predictors which do not provide anything for the data analysis. Also, the first seven columns have been ommited as they are simply just the identifiers for the cases and would not contribute for building the model.
+Then, in order to reduce number of the predictors which do not provide anything for the data analysis. Also, the first seven columns have been omitted as they are simply just the identifiers for the cases and would not contribute for building the model.
 
 After the clean up the number of the predictors has been reduced from 160 to only 53.
 
@@ -40,7 +35,7 @@ pmltrain1 <- pmltrain1[,c(-1:-7)]
 pmltest1 <- pmltest1[,c(-1:-7)]
 ```
 
-### Training and final model selection
+### Models and training
 
 The selection of the cases for the training has been done using the *createDataPartition* function from the *caret* library. 75% of the cases has been selected for the training data set and 25% for the testing purposes. The predicted outcome - class of the activity - is stored in the *classe* variable and the has been used as the vector of the outcomes for splitting the set into the partitions.
 
@@ -61,10 +56,11 @@ This model has been used three times with different parameters to find the most 
 * data is only centered and scaled
 * data is not preprocessed
 
-In each case the repeated K{fold cross-validation method has been applied with the setting of 3 repetitions and K = 10 (default value).
+In each case the repeated K-fold cross-validation method has been applied with the setting of 3 repetitions and K = 10 (default value).
 
-2. Classification and Regression with Random Forest - applied as the *randomForest* function from the *randomForest* library.
-3. k-Nearest Neighbour Classification - applied via the *caret* package and *knn* parameter in the *train* function.
+2. Classification and Regression with Random Forest - applied as the *randomForest* function from the *randomForest* library. The numbers of trees to grow has been set to 500. No cross-validation has been used with this model as "in random forests, there is no need for cross-validation or a separate test set to get an unbiased estimate of the test set error. It is estimated internally, during the run (...)" (source: https://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm).
+
+3. k-Nearest Neighbour Classification - applied via the *caret* package and *knn* parameter in the *train* function. The preprocessing has been done with centering, scaling and PCA. The repeated K-fold cross-validation method has been applied with the setting of 3 repetitions and K = 10.
 
 ```{r, cache=TRUE}
 set.seed(34234)
@@ -89,8 +85,63 @@ modFit5 <- train(classe ~ ., data = training,
                 preProcess = c("center", "scale", "pca"),
                 trControl = trainControl(method = "repeatedcv", repeats = 3))
 ```
-No cross-validation in random forests (see: https://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm)
 
+### Models performance and conclusions
 
+#### Recursive Partitioning and Regression Tree
 
+```{r}
+predictions1 <- predict(modFit1, newdata = testing)
+predictions2 <- predict(modFit2, newdata = testing)
+predictions3 <- predict(modFit3, newdata = testing)
+predictions4 <- predict(modFit4, newdata = testing)
+predictions5 <- predict(modFit5, newdata = testing)
+```
 
+Overall performance of various settings for Recursive Partitioning and Regression Tree was extremely poor. In the worst case the accuracy of the model was only 0.3344 and in the best scenario it was barely 0.4967. In both cases the prediction did not cover fully all classes. Application of the principal components analysis caused "blindness" of the model three classes in the data set (class A, B and C; sensitivity = 0) and sensitivity to the presence of class E was only 0.29.
+
+Removal the PCA in the Regression Tree improved performance of the model (accuracy = 0.4967). However, the model still could not predict class D (sensitivity = 0) and the sensitivity for class B was only 0.33 and for class E only 0.45. Removal options of centering and scaling did not change the outcomes.
+
+```{r}
+confusionMatrix(predictions1, testing$classe)
+fancyRpartPlot(modFit1$finalModel)
+confusionMatrix(predictions2, testing$classe)
+fancyRpartPlot(modFit2$finalModel)
+confusionMatrix(predictions3, testing$classe)
+fancyRpartPlot(modFit3$finalModel)
+```
+
+#### Random Forest
+The performance of the random forest was very high. Its accuracy reached 0.9967, the error estimation dropped dramatically around the 50 trees and the OOB (out-of-bag) estimate of error rate was 0.5%. This model was nearly perfect accurately.
+
+```{r}
+plot(modFit4)
+modFit4
+confusionMatrix(predictions4, testing$classe)
+```
+
+#### The k-Nearest Neighbour Classification
+The k-Nearest Neighbour Classification also performed reasonably well and reached accuracy of 0.9623 which was just slightly less than random forest method. The highest accuracy was reached already just by k = 5.
+
+```{r}
+plot(modFit5)
+confusionMatrix(predictions5, testing$classe)
+```
+
+#### Final test
+Eventually the random forest model was used for predicting the answers (activity classes) of the final test set (pml-testing.csv). Submission to Coursera confirmed it was the right choice as 100% of answers was correct.
+
+```{r}
+rpart1 <- predict(modFit1, newdata = pmltest1)
+rpart2 <- predict(modFit2, newdata = pmltest1)
+rpart3 <- predict(modFit3, newdata = pmltest1)
+rf <- predict(modFit4, newdata = pmltest1)
+knn <- predict(modFit5, newdata = pmltest1)
+fp <- as.data.frame(NULL)
+fp <- as.data.frame(rpart1)
+fp$m2 <- as.data.frame(rpart2)
+fp$m3 <- as.data.frame(rpart3)
+fp$m4 <- as.data.frame(rf)
+fp$m5 <- as.data.frame(knn)
+fp
+```
