@@ -1,22 +1,96 @@
 ---
-title: "Practical Machine Learning"
+title: "Practical Machine Learning - Prediction Assignment"
 author: "Tymon"
 date: "22 Feb 2015"
 output: html_document
 ---
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+### Intro
+This is a short article which briefly explores models which could be used for outcome prediction of the HAR (Human Activity Recognition) data set (http://groupware.les.inf.puc-rio.br/har). The goal is to predict the class of the activity based on the input data collected from the accelerometers attached to the human subjects.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+### Data sets
+
+Two data sets have been provided for the analysis:
+
+1. Training data: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+2. Testing data: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+After the first load and initial examination it was pretty clear that the training data set contain many unspecified values, e.g. NA, empty strings or #DIV/0! which may negatively influnce build of the final model. In order to clean up the data sets, first step was to convert values NA, #DIV/0! and empty strings into explicit NA values.
+
+Then, in order to reduce number of the predictors which do not provide anything for the data analysis. Also, the first seven columns have been ommited as they are simply just the identifiers for the cases and would not contribute for building the model.
+
+After the clean up the number of the predictors has been reduced from 160 to only 53.
+
+```{r, message=FALSE, warning=FALSE}
+library(caret)
+library(rattle)
+library(partykit)
+library(rpart)
+library(randomForest)
+
+pmltrain <- read.csv("pml-training.csv", header=TRUE, na.strings = c("", " ","NA", "#DIV/0!"))
+pmltest <- read.csv("pml-testing.csv", header=TRUE, na.strings = c("", " ","NA", "#DIV/0!"))
+
+# cleaning data sets from NA columns
+pmltrain1 <- pmltrain[, !apply(pmltrain, 2, function(x) any(is.na(x)))]
+pmltest1 <- pmltest[, !apply(pmltest, 2, function(x) any(is.na(x)))]
+
+# removing identifiers, not needed for analysis
+pmltrain1 <- pmltrain1[,c(-1:-7)]
+pmltest1 <- pmltest1[,c(-1:-7)]
+```
+
+### Training and final model selection
+
+The selection of the cases for the training has been done using the *createDataPartition* function from the *caret* library. 75% of the cases has been selected for the training data set and 25% for the testing purposes. The predicted outcome - class of the activity - is stored in the *classe* variable and the has been used as the vector of the outcomes for splitting the set into the partitions.
 
 ```{r}
-summary(cars)
+inTrain <- createDataPartition(y = pmltrain1$classe,
+                               p = 0.75,
+                               list = F)
+training <- pmltrain1[inTrain,]
+testing <- pmltrain1[-inTrain,]
 ```
 
-You can also embed plots, for example:
+Three types of models have been used to find the best way to predict:
 
-```{r, echo=FALSE}
-plot(cars)
+1. Recursive Partitioning and Regression Tree - applied via the *caret* package and *rpart* parameter in the *train* function.
+This model has been used three times with different parameters to find the most optimal configuration:
+
+* data is preprocessed with centering, scaling and principal components analysis
+* data is only centered and scaled
+* data is not preprocessed
+
+In each case the repeated K{fold cross-validation method has been applied with the setting of 3 repetitions and K = 10 (default value).
+
+2. Classification and Regression with Random Forest - applied as the *randomForest* function from the *randomForest* library.
+3. k-Nearest Neighbour Classification - applied via the *caret* package and *knn* parameter in the *train* function.
+
+```{r, cache=TRUE}
+set.seed(34234)
+modFit1 <- train(classe ~ ., data = training,
+                method = "rpart",
+                preProcess = c("center", "scale", "pca"),
+                trControl = trainControl(method = "repeatedcv", repeats = 3))
+
+modFit2 <- train(classe ~ ., data = training,
+                 method = "rpart",
+                 preProcess = c("center", "scale"),
+                 trControl = trainControl(method = "repeatedcv", repeats = 3))
+
+modFit3 <- train(classe ~ ., data = training,
+                 method = "rpart",
+                 trControl = trainControl(method = "repeatedcv", repeats = 3))
+
+modFit4 <- randomForest(classe ~ ., data = training, ntree = 500)
+
+modFit5 <- train(classe ~ ., data = training,
+                method = "knn",
+                preProcess = c("center", "scale", "pca"),
+                trControl = trainControl(method = "repeatedcv", repeats = 3))
 ```
+No cross-validation in random forests (see: https://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm)
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+
